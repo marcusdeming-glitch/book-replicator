@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Book Replicator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3/dist/jszip.min.js"></script>
+  <style>
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #0a0a0a; }
+    ::-webkit-scrollbar-thumb { background: #2d2d2d; border-radius: 3px; }
+
+    .step { display: none; }
+    .step.active { display: block; }
+
+    .prog-dot { width: 10px; height: 10px; border-radius: 50%; background: #2d2d2d; transition: all 0.3s; }
+    .progress-step.done   .prog-dot { background: #6366f1; }
+    .progress-step.active .prog-dot { background: #6366f1; box-shadow: 0 0 0 4px #6366f130; }
+    .prog-line { height: 1px; width: 80px; background: #2d2d2d; transition: background 0.3s; margin-bottom: 14px; }
+    .prog-line.done { background: #6366f1; }
+
+    .drop-zone { border: 2px dashed #2d2d2d; transition: all 0.2s; cursor: pointer; }
+    .drop-zone:hover, .drop-zone.dragover { border-color: #6366f1; background: rgba(99,102,241,0.06); }
+
+    @keyframes blink { 50% { opacity: 0; } }
+    .cursor::after { content: '\25AE'; animation: blink 0.7s step-end infinite; color: #6366f1; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { width: 18px; height: 18px; border: 2px solid #2d2d2d; border-top-color: #6366f1; border-radius: 50%; animation: spin 0.7s linear infinite; display: inline-block; }
+
+    .analysis-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 0.75rem; }
+
+    .md h1 { font-size: 1.45rem; font-weight: 700; margin: 0.4rem 0 1rem; color: #f1f5f9; }
+    .md h2 { font-size: 1.1rem; font-weight: 600; margin: 1.5rem 0 0.4rem; color: #e2e8f0; border-bottom: 1px solid #1f2937; padding-bottom: 0.3rem; }
+    .md h3 { font-size: 0.95rem; font-weight: 600; margin: 1rem 0 0.25rem; color: #cbd5e1; }
+    .md p  { margin: 0.45rem 0; line-height: 1.75; color: #94a3b8; }
+    .md ul, .md ol { margin: 0.4rem 0 0.4rem 1.2rem; color: #94a3b8; }
+    .md li { margin: 0.2rem 0; }
+    .md hr { border: none; border-top: 1px solid #1f2937; margin: 1.5rem 0; }
+    .md em { color: #64748b; font-style: italic; }
+    .md strong { color: #e2e8f0; }
+
+    /* API key bar */
+    #key-bar { transition: all 0.2s; }
+  </style>
+</head>
+<body class="bg-[#0a0a0a] text-gray-100 min-h-screen flex flex-col">
+
+<!-- ── API Key Bar ─────────────────────────────────────────────────────────── -->
+<div id="key-bar" class="hidden shrink-0 bg-amber-950/40 border-b border-amber-900/50 px-5 py-2.5 flex items-center gap-3 flex-wrap">
+  <span class="text-xs text-amber-400 font-medium shrink-0">🔑 Enter your Anthropic API key to use the app:</span>
+  <input id="key-input" type="password" placeholder="sk-ant-api03-…"
+    class="flex-1 min-w-48 bg-[#1a1a1a] border border-amber-800 rounded-lg px-3 py-1.5 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-amber-600">
+  <button id="key-save-btn"
+    class="shrink-0 px-4 py-1.5 bg-amber-700 hover:bg-amber-600 text-white text-xs font-medium rounded-lg transition-colors">
+    Save Key
+  </button>
+  <a href="https://console.anthropic.com/settings/keys" target="_blank"
+    class="shrink-0 text-xs text-amber-500 hover:text-amber-400 underline">Get API key →</a>
+</div>
+
+<!-- ── Header ────────────────────────────────────────────────────────────── -->
+<header class="flex items-center gap-3 h-12 px-5 border-b border-gray-800 bg-[#0d0d0d] shrink-0">
+  <div class="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center text-sm font-bold select-none">B</div>
+  <span class="text-sm font-semibold tracking-tight">Book Replicator</span>
+  <div class="ml-auto flex items-center gap-2">
+    <button id="key-change-btn" title="Change API key"
+      class="text-xs text-gray-600 hover:text-gray-400 px-2 py-1 rounded-lg hover:bg-gray-800 transition-colors">
+      🔑
+    </button>
+    <button id="reset-btn" class="hidden text-xs text-gray-500 hover:text-gray-300 px-3 py-1.5 rounded-lg hover:bg-gray-800 transition-colors">
+      Start Over
+    </button>
+  </div>
+</header>
+
+<!-- ── Progress bar ───────────────────────────────────────────────────────── -->
+<div class="flex items-center justify-center gap-0 py-5 border-b border-gray-800 bg-[#0d0d0d]">
+  <div id="prog-1" class="progress-step active flex flex-col items-center gap-1.5">
+    <div class="prog-dot"></div>
+    <span class="text-xs text-gray-500">Identify</span>
+  </div>
+  <div id="line-1" class="prog-line mx-1"></div>
+  <div id="prog-2" class="progress-step flex flex-col items-center gap-1.5">
+    <div class="prog-dot"></div>
+    <span class="text-xs text-gray-500">Analyze</span>
+  </div>
+  <div id="line-2" class="prog-line mx-1"></div>
+  <div id="prog-3" class="progress-step flex flex-col items-center gap-1.5">
+    <div class="prog-dot"></div>
+    <span class="text-xs text-gray-500">Generate</span>
+  </div>
+</div>
+
+<!-- ── Main ───────────────────────────────────────────────────────────────── -->
+<main class="flex-1 overflow-y-auto p-6">
+<div class="max-w-2xl mx-auto w-full">
+
+  <!-- ══ STEP 1 ══════════════════════════════════════════════════════════════ -->
+  <section id="step-identify" class="step active">
+    <h2 class="text-base font-semibold mb-1">Identify a Book</h2>
+    <p class="text-sm text-gray-500 mb-5">Upload a cover photo or enter the title to get started.</p>
+
+    <div id="drop-zone" class="drop-zone rounded-2xl p-10 text-center mb-5">
+      <div id="drop-content">
+        <div class="text-4xl mb-3 select-none">📚</div>
+        <p class="text-sm text-gray-400 mb-1">Drag &amp; drop a book cover image here</p>
+        <p class="text-xs text-gray-600">or click to browse — JPG, PNG, WEBP (max 5 MB)</p>
+      </div>
+      <div id="drop-preview" class="hidden flex flex-col items-center gap-2"></div>
+      <input id="file-input" type="file" accept="image/*" class="hidden">
+    </div>
+
+    <div class="flex items-center gap-3 mb-5">
+      <div class="flex-1 h-px bg-gray-800"></div>
+      <span class="text-xs text-gray-600 uppercase tracking-widest">or</span>
+      <div class="flex-1 h-px bg-gray-800"></div>
+    </div>
+
+    <input id="text-input" type="text"
+      class="w-full bg-[#141414] border border-gray-700 rounded-xl px-4 py-3 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-indigo-600 transition-colors mb-5"
+      placeholder="Enter book title, author, or description…">
+
+    <button id="identify-btn"
+      class="w-full py-3 rounded-xl text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+      Identify Book
+    </button>
+    <div id="identify-error" class="hidden mt-4 p-3 bg-red-950/50 border border-red-900 rounded-xl text-sm text-red-400"></div>
+  </section>
+
+  <!-- ══ STEP 2 ══════════════════════════════════════════════════════════════ -->
+  <section id="step-analyze" class="step">
+    <div id="book-card" class="mb-5 p-5 bg-[#111] border border-gray-800 rounded-2xl"></div>
+    <div id="analysis-loading" class="py-14 text-center">
+      <div class="spinner mx-auto mb-4"></div>
+      <p class="text-sm text-gray-500">Analyzing narrative structure and style…</p>
+    </div>
+    <div id="analysis-grid" class="hidden analysis-grid mb-5"></div>
+    <button id="generate-btn"
+      class="hidden w-full py-3 rounded-xl text-sm font-medium text-white bg-violet-600 hover:bg-violet-500 active:bg-violet-700 transition-colors">
+      Generate New Book
+    </button>
+    <div id="analyze-error" class="hidden mt-4 p-3 bg-red-950/50 border border-red-900 rounded-xl text-sm text-red-400"></div>
+  </section>
+
+  <!-- ══ STEP 3 ══════════════════════════════════════════════════════════════ -->
+  <section id="step-generate" class="step">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-base font-semibold">Generated Book</h2>
+      <span class="text-xs px-2 py-1 bg-gray-800 text-gray-500 rounded-full">claude-opus-4-6</span>
+    </div>
+
+    <div id="gen-output"
+      class="md text-sm leading-relaxed bg-[#0d0d0d] border border-gray-800 rounded-2xl p-6 min-h-40 mb-5">
+      <span class="text-gray-600">Generating your original book…</span>
+    </div>
+
+    <!-- Export row -->
+    <div id="export-row" class="hidden p-4 bg-[#111] border border-gray-800 rounded-2xl">
+      <div class="flex items-center gap-3 flex-wrap">
+        <span class="text-sm text-gray-400 shrink-0">Download as</span>
+        <select id="export-format"
+          class="flex-1 min-w-36 bg-[#1a1a1a] border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-gray-600">
+          <option value="docx">Word (.docx)</option>
+          <option value="pdf">PDF (print)</option>
+          <option value="epub">EPUB</option>
+        </select>
+        <button id="export-btn"
+          class="shrink-0 px-5 py-2 rounded-lg text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+          Download
+        </button>
+      </div>
+      <div id="export-error" class="hidden mt-3 p-3 bg-red-950/50 border border-red-900 rounded-xl text-sm text-red-400"></div>
+    </div>
+  </section>
+
+</div>
+</main>
+
+<!-- ── Print styles for PDF export ───────────────────────────────────────── -->
+<style id="print-styles">
+  @media print {
+    body > *:not(#print-frame) { display: none !important; }
+    #print-frame { display: block !important; position: fixed; top: 0; left: 0; width: 100%; }
+  }
+</style>
+
+<script>
+(function () {
+  'use strict';
+
+  marked.setOptions({ breaks: true, gfm: true });
+
+  // ── Prompts ────────────────────────────────────────────────────────────────
+  const IDENTIFY_PROMPT = `You are a book identification expert with encyclopedic knowledge of published works.
+
+Given a book cover image or a title/description, identify the book and respond with ONLY a valid JSON object — no markdown fences, no explanation, no prose.
+
+The JSON must have exactly these fields:
+{
+  "title": "exact title",
+  "author": "full author name",
+  "genre": "primary genre",
+  "year": "publication year as string, or Unknown",
+  "description": "2-3 sentence synopsis without major spoilers",
+  "confidence": "high or medium or low",
+  "notes": "caveats if uncertain, otherwise empty string"
+}
+
+If uncertain, make your best guess and set confidence to low. Never refuse — always return the JSON structure.`;
+
+  const ANALYZE_PROMPT = `You are a literary analyst specializing in narrative structure, thematic analysis, and prose style.
+
+Given information about a book, produce a deep structural and stylistic analysis. Respond with ONLY a valid JSON object — no markdown fences, no explanation, no prose.
+
+The JSON must have exactly these fields:
+{
+  "themes": ["list", "of", "3 to 6 core themes"],
+  "plot_structure": "name of the primary structure: Three-Act, Hero Journey, In Medias Res, Episodic, Kishōtenketsu, etc.",
+  "plot_summary": "3-4 sentence structural breakdown: setup, conflict, resolution",
+  "character_archetypes": ["Protagonist type", "Antagonist type", "Mentor", "etc — 3 to 5 items"],
+  "narrative_pov": "First Person or Third Person Limited or Third Person Omniscient or Second Person or Multiple POV",
+  "tone_style": ["list", "of", "4 to 6 style descriptors e.g. lyrical sparse darkly comic introspective"],
+  "key_motifs": ["list", "of", "3 to 5 recurring symbols or motifs"],
+  "pacing": "slow burn or measured or fast-paced or thriller-paced or episodic",
+  "setting_role": "backdrop or atmospheric or character or symbolic",
+  "comparable_authors": ["2 to 3 author names with similar styles"]
+}
+
+Be specific and precise. Base your analysis on the actual published book.`;
+
+  const GENERATE_PROMPT = `You are a master novelist. Your task is to create a COMPLETELY ORIGINAL new book inspired by the structural and stylistic DNA of a source book — not a copy, sequel, or retelling.
+
+The new book must:
+- Share the same narrative structure, POV style, pacing, and tone as the source
+- Explore entirely different themes, characters, settings, and plot
+- Contain no characters, locations, or plot events from the source
+
+Format your response using this exact markdown layout:
+
+# [NEW BOOK TITLE]
+
+## Premise
+[2-3 sentences: the core central conflict or premise]
+
+## Characters
+[List 4-6 characters with name, role, and 1-sentence description each]
+
+## Setting
+[Time period and world — 2-3 sentences]
+
+## Chapter Outline
+
+### Chapter 1: [Title]
+[2-3 sentence summary]
+
+### Chapter 2: [Title]
+[2-3 sentence summary]
+
+### Chapter 3: [Title]
+[2-3 sentence summary]
+
+### Chapter 4: [Title]
+[2-3 sentence summary]
+
+### Chapter 5: [Title]
+[2-3 sentence summary]
+
+### Chapter 6: [Title]
+[2-3 sentence summary]
+
+### Chapter 7: [Title]
+[2-3 sentence summary]
+
+### Chapter 8: [Title]
+[2-3 sentence summary]
+
+### Chapter 9: [Title]
+[2-3 sentence summary]
+
+### Chapter 10: [Title]
+[2-3 sentence summary]
+
+## Sample Chapter: Chapter 1
+
+[Write a full sample chapter of 1000-1500 words. Employ the exact narrative POV, sentence rhythm, pacing, and tonal register of the source book's style. Do not reference or allude to the source book in any way.]
+
+---
+*Style inspired by the narrative architecture of the source work — all content is original*`;
+
+  // ── API key management ─────────────────────────────────────────────────────
+  const KEY_STORE = 'book_replicator_api_key';
+
+  function getApiKey() { return localStorage.getItem(KEY_STORE) || ''; }
+  function saveApiKey(k) { localStorage.setItem(KEY_STORE, k.trim()); }
+
+  const keyBar     = document.getElementById('key-bar');
+  const keyInput   = document.getElementById('key-input');
+  const keySaveBtn = document.getElementById('key-save-btn');
+  const keyChangeBtn = document.getElementById('key-change-btn');
+
+  function checkKeyBar() {
+    if (!getApiKey()) {
+      keyBar.classList.remove('hidden');
+      keyBar.style.display = 'flex';
+    } else {
+      keyBar.classList.add('hidden');
+      keyBar.style.display = '';
+    }
+  }
+
+  keySaveBtn.addEventListener('click', () => {
+    const k = keyInput.value.trim();
+    if (!k) return;
+    saveApiKey(k);
+    keyInput.value = '';
+    checkKeyBar();
+  });
+
+  keyInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') keySaveBtn.click();
+  });
+
+  keyChangeBtn.addEventListener('click', () => {
+    keyBar.classList.remove('hidden');
+    keyBar.style.display = 'flex';
+    keyInput.focus();
+  });
+
+  checkKeyBar();
+
+  // ── Anthropic API helpers ──────────────────────────────────────────────────
+  const API_URL = 'https://api.anthropic.com/v1/messages';
+
+  function apiHeaders() {
+    return {
+      'Content-Type': 'application/json',
+      'x-api-key': getApiKey(),
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    };
+  }
+
+  async function callApi(model, maxTokens, system, messages) {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: apiHeaders(),
+      body: JSON.stringify({ model, max_tokens: maxTokens, system, messages }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message || 'API error ' + res.status);
+    }
+    const data = await res.json();
+    return data.content[0].text;
+  }
+
+  async function* streamApi(model, maxTokens, system, messages) {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: apiHeaders(),
+      body: JSON.stringify({ model, max_tokens: maxTokens, system, messages, stream: true }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message || 'API error ' + res.status);
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop() ?? '';
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const raw = line.slice(6);
+        if (raw === '[DONE]') return;
+        try {
+          const ev = JSON.parse(raw);
+          if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') {
+            yield ev.delta.text;
+          }
+        } catch { /* skip malformed events */ }
+      }
+    }
+  }
+
+  function stripJsonFences(raw) {
+    raw = raw.trim();
+    if (raw.startsWith('```')) {
+      const parts = raw.split('```');
+      let inner = parts[1] || '';
+      if (inner.startsWith('json')) inner = inner.slice(4);
+      return inner.trim();
+    }
+    return raw;
+  }
+
+  // ── App state ──────────────────────────────────────────────────────────────
+  let currentFile   = null;
+  let currentB64    = null;
+  let currentMime   = null;
+  let bookData      = null;
+  let analysisData  = null;
+  let generatedText = '';
+
+  // ── DOM refs ───────────────────────────────────────────────────────────────
+  const dropZone        = document.getElementById('drop-zone');
+  const dropContent     = document.getElementById('drop-content');
+  const dropPreview     = document.getElementById('drop-preview');
+  const fileInput       = document.getElementById('file-input');
+  const textInput       = document.getElementById('text-input');
+  const identifyBtn     = document.getElementById('identify-btn');
+  const identifyError   = document.getElementById('identify-error');
+  const bookCard        = document.getElementById('book-card');
+  const analysisLoading = document.getElementById('analysis-loading');
+  const analysisGrid    = document.getElementById('analysis-grid');
+  const generateBtn     = document.getElementById('generate-btn');
+  const analyzeError    = document.getElementById('analyze-error');
+  const genOutput       = document.getElementById('gen-output');
+  const exportRow       = document.getElementById('export-row');
+  const exportFormat    = document.getElementById('export-format');
+  const exportBtn       = document.getElementById('export-btn');
+  const exportError     = document.getElementById('export-error');
+  const resetBtn        = document.getElementById('reset-btn');
+
+  // ── Step navigation ────────────────────────────────────────────────────────
+  function goToStep(n) {
+    document.querySelectorAll('.step').forEach((s, i) => s.classList.toggle('active', i + 1 === n));
+    for (let i = 1; i <= 3; i++) {
+      document.getElementById('prog-' + i).classList.toggle('done',   i < n);
+      document.getElementById('prog-' + i).classList.toggle('active', i === n);
+    }
+    for (let i = 1; i <= 2; i++) {
+      document.getElementById('line-' + i).classList.toggle('done', i < n);
+    }
+    n > 1 ? resetBtn.classList.remove('hidden') : resetBtn.classList.add('hidden');
+  }
+
+  // ── Drag & Drop ────────────────────────────────────────────────────────────
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault(); dropZone.classList.remove('dragover');
+    const f = e.dataTransfer.files[0];
+    if (f && f.type.startsWith('image/')) setFile(f);
+  });
+  dropZone.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', () => { if (fileInput.files[0]) setFile(fileInput.files[0]); });
+
+  function setFile(file) {
+    if (file.size > 5 * 1024 * 1024) { showError(identifyError, 'Image too large — please use an image under 5 MB.'); return; }
+    currentFile = file;
+    currentMime = file.type || 'image/jpeg';
+    textInput.value = '';
+    const reader = new FileReader();
+    reader.onload = e => {
+      const dataUrl = e.target.result;
+      // Extract base64 data (strip data:image/...;base64, prefix)
+      currentB64 = dataUrl.split(',')[1];
+      dropContent.classList.add('hidden');
+      dropPreview.classList.remove('hidden');
+      dropPreview.innerHTML =
+        '<img src="' + esc(dataUrl) + '" class="max-h-44 mx-auto rounded-xl object-contain mb-2">' +
+        '<p class="text-xs text-gray-500">' + esc(file.name) + '</p>';
+    };
+    reader.readAsDataURL(file);
+  }
+
+  textInput.addEventListener('input', () => {
+    if (textInput.value && currentFile) {
+      currentFile = null; currentB64 = null; currentMime = null;
+      dropContent.classList.remove('hidden');
+      dropPreview.classList.add('hidden');
+      dropPreview.innerHTML = '';
+      fileInput.value = '';
+    }
+  });
+
+  // ── Step 1: Identify ───────────────────────────────────────────────────────
+  identifyBtn.addEventListener('click', async () => {
+    const hasImage = Boolean(currentB64);
+    const hasText  = textInput.value.trim().length > 0;
+    if (!hasImage && !hasText) { showError(identifyError, 'Please upload a cover image or enter a book title.'); return; }
+    if (!getApiKey()) { showError(identifyError, 'Please enter your Anthropic API key first (see the yellow bar above).'); return; }
+    hideError(identifyError);
+    setLoading(identifyBtn, 'Identifying…');
+
+    try {
+      let userContent;
+      if (hasImage) {
+        userContent = [
+          { type: 'image', source: { type: 'base64', media_type: currentMime, data: currentB64 } },
+          { type: 'text', text: 'Identify this book from its cover image.' },
+        ];
+      } else {
+        userContent = textInput.value.trim();
+      }
+
+      const raw = await callApi(
+        'claude-sonnet-4-6', 1024, IDENTIFY_PROMPT,
+        [{ role: 'user', content: userContent }]
+      );
+      bookData = JSON.parse(stripJsonFences(raw));
+      goToStep(2);
+      renderBookCard(bookData);
+      await runAnalysis(bookData);
+    } catch (e) {
+      showError(identifyError, e.message);
+    } finally {
+      resetLoading(identifyBtn, 'Identify Book');
+    }
+  });
+
+  // ── Step 2: Book card ──────────────────────────────────────────────────────
+  function renderBookCard(b) {
+    const badge = { high: 'bg-green-900/40 text-green-400', medium: 'bg-yellow-900/40 text-yellow-400', low: 'bg-red-900/40 text-red-400' }[b.confidence] || 'bg-gray-800 text-gray-400';
+    bookCard.innerHTML =
+      '<div class="flex items-start justify-between gap-4">' +
+        '<div class="min-w-0">' +
+          '<h3 class="text-sm font-semibold text-white">' + esc(b.title) + '</h3>' +
+          '<p class="text-xs text-gray-400 mt-0.5">' + esc(b.author) + ' &middot; ' + esc(b.genre) + ' &middot; ' + esc(b.year) + '</p>' +
+          '<p class="text-xs text-gray-500 mt-2 leading-relaxed">' + esc(b.description) + '</p>' +
+          (b.notes ? '<p class="text-xs text-gray-600 mt-2 italic">' + esc(b.notes) + '</p>' : '') +
+        '</div>' +
+        '<span class="shrink-0 text-xs px-2 py-1 rounded-full ' + badge + '">' + esc(b.confidence) + '</span>' +
+      '</div>';
+  }
+
+  // ── Step 2: Analysis ───────────────────────────────────────────────────────
+  async function runAnalysis(b) {
+    analysisLoading.classList.remove('hidden');
+    analysisGrid.classList.add('hidden');
+    generateBtn.classList.add('hidden');
+    hideError(analyzeError);
+    try {
+      const userMsg = 'Book: ' + b.title + ' by ' + b.author + '\nGenre: ' + b.genre + ' | Year: ' + b.year + '\nDescription: ' + b.description;
+      const raw = await callApi('claude-opus-4-6', 2048, ANALYZE_PROMPT, [{ role: 'user', content: userMsg }]);
+      analysisData = JSON.parse(stripJsonFences(raw));
+      renderAnalysis(analysisData);
+    } catch (e) {
+      analysisLoading.classList.add('hidden');
+      showError(analyzeError, 'Analysis failed: ' + e.message);
+    }
+  }
+
+  function renderAnalysis(a) {
+    analysisLoading.classList.add('hidden');
+    const cards = [
+      { label: 'Core Themes',        icon: '🎭', html: tags(a.themes) },
+      { label: 'Plot Structure',     icon: '📐', html: '<p class="text-xs text-gray-300 font-medium">' + esc(a.plot_structure) + '</p><p class="text-xs text-gray-500 mt-1 leading-relaxed">' + esc(a.plot_summary) + '</p>' },
+      { label: 'Character Types',    icon: '👥', html: tags(a.character_archetypes) },
+      { label: 'Narrative POV',      icon: '👁',  html: '<p class="text-xs text-gray-300">' + esc(a.narrative_pov) + '</p>' },
+      { label: 'Tone & Style',       icon: '✍️', html: tags(a.tone_style) },
+      { label: 'Key Motifs',         icon: '🔑', html: tags(a.key_motifs) },
+      { label: 'Pacing',             icon: '⏱',  html: '<p class="text-xs text-gray-300">' + esc(a.pacing) + '</p>' },
+      { label: 'Comparable Authors', icon: '📖', html: tags(a.comparable_authors) },
+    ];
+    analysisGrid.innerHTML = cards.map(c =>
+      '<div class="bg-[#111] border border-gray-800 rounded-xl p-4">' +
+        '<div class="flex items-center gap-2 mb-2.5">' +
+          '<span class="text-sm">' + c.icon + '</span>' +
+          '<span class="text-xs font-semibold uppercase tracking-widest text-gray-600">' + esc(c.label) + '</span>' +
+        '</div>' + c.html +
+      '</div>'
+    ).join('');
+    analysisGrid.classList.remove('hidden');
+    generateBtn.classList.remove('hidden');
+  }
+
+  function tags(arr) {
+    return (arr || []).map(t =>
+      '<span class="inline-block text-xs px-2 py-0.5 bg-gray-800 text-gray-300 rounded-full mr-1 mb-1">' + esc(t) + '</span>'
+    ).join('');
+  }
+
+  // ── Step 3: Generate ───────────────────────────────────────────────────────
+  generateBtn.addEventListener('click', async () => {
+    goToStep(3);
+    generatedText = '';
+    genOutput.innerHTML = '<span class="text-gray-600">Generating your original book…</span>';
+    genOutput.classList.add('cursor');
+    exportRow.classList.add('hidden');
+    hideError(exportError);
+
+    const userMsg =
+      'SOURCE BOOK: ' + bookData.title + ' by ' + bookData.author + '\n' +
+      'Genre: ' + bookData.genre + '\n\n' +
+      'ANALYSIS:\n' +
+      'Themes: ' + (analysisData.themes || []).join(', ') + '\n' +
+      'Plot structure: ' + (analysisData.plot_structure || '') + '\n' +
+      'Character archetypes: ' + (analysisData.character_archetypes || []).join(', ') + '\n' +
+      'Narrative POV: ' + (analysisData.narrative_pov || '') + '\n' +
+      'Tone/Style: ' + (analysisData.tone_style || []).join(', ') + '\n' +
+      'Key motifs: ' + (analysisData.key_motifs || []).join(', ') + '\n' +
+      'Original description: ' + bookData.description;
+
+    try {
+      const gen = streamApi('claude-opus-4-6', 8192, GENERATE_PROMPT, [{ role: 'user', content: userMsg }]);
+      let first = true;
+      for await (const chunk of gen) {
+        if (first) { genOutput.innerHTML = ''; first = false; }
+        generatedText += chunk;
+        genOutput.innerHTML = marked.parse(generatedText);
+        genOutput.scrollIntoView({ block: 'end', behavior: 'smooth' });
+      }
+      genOutput.classList.remove('cursor');
+      exportRow.classList.remove('hidden');
+    } catch (e) {
+      genOutput.classList.remove('cursor');
+      genOutput.innerHTML = '<span class="text-red-400">Error: ' + esc(e.message) + '</span>';
+    }
+  });
+
+  // ── Export ─────────────────────────────────────────────────────────────────
+  exportBtn.addEventListener('click', async () => {
+    if (!generatedText) return;
+    hideError(exportError);
+    const fmt = exportFormat.value;
+
+    // Extract title from first # heading
+    const titleMatch = generatedText.match(/^#\s+(.+)/m);
+    const bookTitle  = titleMatch ? titleMatch[1].trim() : (bookData ? bookData.title + ' Reimagined' : 'Generated Book');
+    const safeName   = bookTitle.replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_');
+
+    setLoading(exportBtn, 'Preparing…');
+    try {
+      if (fmt === 'docx') {
+        await exportDocx(bookTitle, safeName);
+      } else if (fmt === 'pdf') {
+        exportPdf(bookTitle);
+      } else if (fmt === 'epub') {
+        await exportEpub(bookTitle, safeName);
+      }
+    } catch (e) {
+      showError(exportError, 'Export failed: ' + e.message);
+    } finally {
+      resetLoading(exportBtn, 'Download');
+    }
+  });
+
+  async function exportDocx(bookTitle, safeName) {
+    // Convert markdown → HTML for html-docx-js
+    const htmlBody = marked.parse(generatedText);
+    const fullHtml = '<!DOCTYPE html><html><head><meta charset="utf-8">' +
+      '<style>body{font-family:Georgia,serif;font-size:12pt;line-height:1.7;margin:1in;}' +
+      'h1{font-size:22pt;text-align:center;}h2{font-size:15pt;border-bottom:1px solid #ccc;}' +
+      'h3{font-size:12pt;}p{margin:6pt 0;text-align:justify;}hr{border-top:1px solid #ccc;}</style>' +
+      '</head><body>' + htmlBody + '</body></html>';
+
+    if (typeof htmlDocx === 'undefined') throw new Error('html-docx-js library not loaded. Check your internet connection.');
+    const blob = htmlDocx.asBlob(fullHtml);
+    triggerDownload(blob, safeName + '.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+  }
+
+  function exportPdf(bookTitle) {
+    // Open print window with styled content
+    const htmlBody = marked.parse(generatedText);
+    const win = window.open('', '_blank');
+    win.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + esc(bookTitle) + '</title>' +
+      '<style>@page{margin:1in;}body{font-family:Georgia,serif;font-size:12pt;line-height:1.7;color:#111;max-width:6in;margin:auto;}' +
+      'h1{font-size:22pt;text-align:center;margin-bottom:12pt;}h2{font-size:14pt;border-bottom:1px solid #bbb;padding-bottom:4pt;margin-top:24pt;}' +
+      'h3{font-size:12pt;margin-top:16pt;}p{margin:6pt 0;text-align:justify;}hr{border:none;border-top:1px solid #bbb;margin:16pt 0;}' +
+      'em{color:#555;}strong{font-weight:bold;}</style></head><body>' + htmlBody + '</body></html>');
+    win.document.close();
+    win.focus();
+    setTimeout(() => { win.print(); }, 500);
+  }
+
+  async function exportEpub(bookTitle, safeName) {
+    if (typeof JSZip === 'undefined') throw new Error('JSZip library not loaded. Check your internet connection.');
+
+    const zip = new JSZip();
+
+    // EPUB structure
+    zip.file('mimetype', 'application/epub+zip', { compression: 'STORE' });
+
+    zip.folder('META-INF').file('container.xml',
+      '<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">' +
+      '<rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>');
+
+    // Split markdown into chapters by ## headings
+    const sections = generatedText.split(/\n(?=## )/);
+    const oebps    = zip.folder('OEBPS');
+    const chaps    = [];
+
+    sections.forEach((sec, i) => {
+      const lines   = sec.trim().split('\n');
+      const heading = lines[0].replace(/^#+\s*/, '') || 'Section ' + (i + 1);
+      const body    = marked.parse(lines.slice(1).join('\n'));
+      const fname   = 'chap_' + String(i).padStart(2, '0') + '.xhtml';
+
+      oebps.file(fname,
+        '<?xml version="1.0" encoding="utf-8"?>' +
+        '<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml"><head>' +
+        '<meta charset="utf-8"/><title>' + esc(heading) + '</title>' +
+        '<style>body{font-family:Georgia,serif;font-size:1em;line-height:1.65;margin:1em 2em;}' +
+        'h1,h2,h3{font-family:sans-serif;}p{margin:.4em 0;text-align:justify;}</style>' +
+        '</head><body><h2>' + esc(heading) + '</h2>' + body + '</body></html>');
+
+      chaps.push({ id: 'chap' + i, href: fname, title: heading });
+    });
+
+    // content.opf
+    const manifest = chaps.map(c =>
+      '<item id="' + c.id + '" href="' + c.href + '" media-type="application/xhtml+xml"/>'
+    ).join('\n    ');
+    const spine = chaps.map(c => '<itemref idref="' + c.id + '"/>').join('\n    ');
+    oebps.file('content.opf',
+      '<?xml version="1.0" encoding="utf-8"?>' +
+      '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">' +
+      '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">' +
+      '<dc:title>' + esc(bookTitle) + '</dc:title>' +
+      '<dc:language>en</dc:language>' +
+      '<dc:identifier id="uid">' + safeName + '</dc:identifier></metadata>' +
+      '<manifest><item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>' +
+      '<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>' +
+      manifest + '</manifest>' +
+      '<spine toc="ncx">' + spine + '</spine></package>');
+
+    // toc.ncx
+    const navPoints = chaps.map((c, i) =>
+      '<navPoint id="np' + i + '" playOrder="' + (i+1) + '">' +
+      '<navLabel><text>' + esc(c.title) + '</text></navLabel>' +
+      '<content src="' + c.href + '"/></navPoint>'
+    ).join('\n');
+    oebps.file('toc.ncx',
+      '<?xml version="1.0" encoding="utf-8"?>' +
+      '<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">' +
+      '<head><meta name="dtb:uid" content="' + safeName + '"/></head>' +
+      '<docTitle><text>' + esc(bookTitle) + '</text></docTitle>' +
+      '<navMap>' + navPoints + '</navMap></ncx>');
+
+    // nav.xhtml
+    const navItems = chaps.map(c =>
+      '<li><a href="' + c.href + '">' + esc(c.title) + '</a></li>'
+    ).join('\n');
+    oebps.file('nav.xhtml',
+      '<?xml version="1.0" encoding="utf-8"?>' +
+      '<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">' +
+      '<head><title>Contents</title></head><body>' +
+      '<nav epub:type="toc"><h1>Contents</h1><ol>' + navItems + '</ol></nav></body></html>');
+
+    const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/epub+zip' });
+    triggerDownload(blob, safeName + '.epub', 'application/epub+zip');
+  }
+
+  function triggerDownload(blob, filename, mime) {
+    const url = URL.createObjectURL(blob);
+    const a   = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+
+  // ── Reset ──────────────────────────────────────────────────────────────────
+  resetBtn.addEventListener('click', () => {
+    currentFile = null; currentB64 = null; currentMime = null;
+    bookData = null; analysisData = null; generatedText = '';
+    fileInput.value = ''; textInput.value = '';
+    dropContent.classList.remove('hidden');
+    dropPreview.classList.add('hidden'); dropPreview.innerHTML = '';
+    exportRow.classList.add('hidden');
+    genOutput.innerHTML = ''; genOutput.classList.remove('cursor');
+    hideError(identifyError); hideError(analyzeError); hideError(exportError);
+    goToStep(1);
+  });
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  function showError(el, msg) { el.textContent = msg; el.classList.remove('hidden'); }
+  function hideError(el)      { el.classList.add('hidden'); }
+  function setLoading(btn, label) { btn._orig = btn.textContent; btn.disabled = true; btn.textContent = label; }
+  function resetLoading(btn, label) { btn.disabled = false; btn.textContent = label || btn._orig; }
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  goToStep(1);
+})();
+</script>
+</body>
+</html>
