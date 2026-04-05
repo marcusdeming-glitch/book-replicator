@@ -45,6 +45,9 @@
 
     /* API key bar */
     #key-bar { transition: all 0.2s; }
+
+    /* Format chips */
+    .fmt-chip.selected { border-color: #6366f1; color: #a5b4fc; background: rgba(99,102,241,0.12); }
   </style>
 </head>
 <body class="bg-[#0a0a0a] text-gray-100 min-h-screen flex flex-col">
@@ -133,12 +136,124 @@
 
   <!-- ══ STEP 2 ══════════════════════════════════════════════════════════════ -->
   <section id="step-analyze" class="step">
-    <div id="book-card" class="mb-5 p-5 bg-[#111] border border-gray-800 rounded-2xl"></div>
+
+    <!-- Identified book card -->
+    <div id="book-card" class="mb-4 p-5 bg-[#111] border border-gray-800 rounded-2xl"></div>
+
+    <!-- ── Paste Book Content (collapsible) ─────────────────────────────── -->
+    <div class="mb-4 bg-[#111] border border-gray-800 rounded-2xl overflow-hidden">
+      <button id="content-toggle"
+        class="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-800/40 transition-colors">
+        <div class="flex items-center gap-2">
+          <span class="text-sm">📄</span>
+          <span class="text-xs font-semibold text-gray-300">Paste Book Content</span>
+          <span class="text-xs text-gray-600">— optional, improves analysis accuracy</span>
+        </div>
+        <span id="content-toggle-icon" class="text-gray-600 text-xs transition-transform">▼</span>
+      </button>
+      <div id="content-panel" class="hidden px-4 pb-4">
+        <textarea id="content-input" rows="7"
+          class="w-full bg-[#0d0d0d] border border-gray-700 rounded-xl px-3 py-2.5 text-xs text-gray-300 placeholder-gray-600 focus:outline-none focus:border-indigo-600 transition-colors resize-none leading-relaxed mb-3"
+          placeholder="Paste excerpts, a chapter, or any text from the book here. The more content you provide, the more accurate the style analysis will be…"></textarea>
+        <button id="reanalyze-btn"
+          class="w-full py-2 rounded-xl text-xs font-medium text-white bg-indigo-600/80 hover:bg-indigo-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+          Re-analyze with this Content
+        </button>
+      </div>
+    </div>
+
+    <!-- Analysis loading -->
     <div id="analysis-loading" class="py-14 text-center">
       <div class="spinner mx-auto mb-4"></div>
       <p class="text-sm text-gray-500">Analyzing narrative structure and style…</p>
     </div>
-    <div id="analysis-grid" class="hidden analysis-grid mb-5"></div>
+
+    <!-- Analysis cards grid -->
+    <div id="analysis-grid" class="hidden analysis-grid mb-4"></div>
+
+    <!-- ── Generation Format Panel ───────────────────────────────────────── -->
+    <div id="format-panel" class="hidden mb-4 bg-[#111] border border-gray-800 rounded-2xl overflow-hidden">
+      <div class="px-4 py-3 border-b border-gray-800 flex items-center gap-2">
+        <span class="text-sm">⚙️</span>
+        <span class="text-xs font-semibold text-gray-300">Generation Format</span>
+        <span class="text-xs text-gray-600">— customise your new book</span>
+      </div>
+      <div class="p-4 space-y-4">
+
+        <!-- Number of chapters -->
+        <div>
+          <p class="text-xs text-gray-500 mb-2 font-medium uppercase tracking-widest">Chapters</p>
+          <div class="flex gap-2 flex-wrap">
+            <button class="fmt-chip fmt-chapters px-3 py-1.5 rounded-lg text-xs border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors" data-value="5">5</button>
+            <button class="fmt-chip fmt-chapters px-3 py-1.5 rounded-lg text-xs border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors selected" data-value="10">10</button>
+            <button class="fmt-chip fmt-chapters px-3 py-1.5 rounded-lg text-xs border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors" data-value="15">15</button>
+            <button class="fmt-chip fmt-chapters px-3 py-1.5 rounded-lg text-xs border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors" data-value="20">20</button>
+          </div>
+        </div>
+
+        <!-- Sample chapter length -->
+        <div>
+          <p class="text-xs text-gray-500 mb-2 font-medium uppercase tracking-widest">Sample Chapter Length</p>
+          <div class="flex gap-2 flex-wrap">
+            <button class="fmt-chip fmt-chaplen px-3 py-1.5 rounded-lg text-xs border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors" data-value="500">Short (~500w)</button>
+            <button class="fmt-chip fmt-chaplen px-3 py-1.5 rounded-lg text-xs border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors selected" data-value="1000">Medium (~1000w)</button>
+            <button class="fmt-chip fmt-chaplen px-3 py-1.5 rounded-lg text-xs border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors" data-value="1500">Long (~1500w)</button>
+            <button class="fmt-chip fmt-chaplen px-3 py-1.5 rounded-lg text-xs border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors" data-value="2000">Extended (~2000w)</button>
+          </div>
+        </div>
+
+        <!-- Point of view -->
+        <div>
+          <p class="text-xs text-gray-500 mb-2 font-medium uppercase tracking-widest">Point of View</p>
+          <div class="flex gap-2 flex-wrap">
+            <button class="fmt-chip fmt-pov px-3 py-1.5 rounded-lg text-xs border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors selected" data-value="source">Keep Source POV</button>
+            <button class="fmt-chip fmt-pov px-3 py-1.5 rounded-lg text-xs border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors" data-value="First Person">1st Person</button>
+            <button class="fmt-chip fmt-pov px-3 py-1.5 rounded-lg text-xs border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors" data-value="Third Person Limited">3rd Limited</button>
+            <button class="fmt-chip fmt-pov px-3 py-1.5 rounded-lg text-xs border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors" data-value="Third Person Omniscient">3rd Omniscient</button>
+            <button class="fmt-chip fmt-pov px-3 py-1.5 rounded-lg text-xs border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors" data-value="Second Person">2nd Person</button>
+          </div>
+        </div>
+
+        <!-- Genre shift -->
+        <div>
+          <p class="text-xs text-gray-500 mb-2 font-medium uppercase tracking-widest">Genre</p>
+          <div class="flex gap-2 flex-wrap">
+            <button class="fmt-chip fmt-genre px-3 py-1.5 rounded-lg text-xs border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors selected" data-value="source">Keep Source Genre</button>
+            <button class="fmt-chip fmt-genre px-3 py-1.5 rounded-lg text-xs border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors" data-value="Thriller">Thriller</button>
+            <button class="fmt-chip fmt-genre px-3 py-1.5 rounded-lg text-xs border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors" data-value="Romance">Romance</button>
+            <button class="fmt-chip fmt-genre px-3 py-1.5 rounded-lg text-xs border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors" data-value="Science Fiction">Sci-Fi</button>
+            <button class="fmt-chip fmt-genre px-3 py-1.5 rounded-lg text-xs border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors" data-value="Fantasy">Fantasy</button>
+            <button class="fmt-chip fmt-genre px-3 py-1.5 rounded-lg text-xs border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors" data-value="Mystery">Mystery</button>
+            <button class="fmt-chip fmt-genre px-3 py-1.5 rounded-lg text-xs border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors" data-value="Literary Fiction">Literary</button>
+            <button class="fmt-chip fmt-genre px-3 py-1.5 rounded-lg text-xs border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors" data-value="Horror">Horror</button>
+          </div>
+        </div>
+
+        <!-- Tone shift -->
+        <div>
+          <p class="text-xs text-gray-500 mb-2 font-medium uppercase tracking-widest">Tone</p>
+          <div class="flex gap-2 flex-wrap">
+            <button class="fmt-chip fmt-tone px-3 py-1.5 rounded-lg text-xs border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors selected" data-value="source">Keep Source Tone</button>
+            <button class="fmt-chip fmt-tone px-3 py-1.5 rounded-lg text-xs border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors" data-value="dark and gritty">Dark & Gritty</button>
+            <button class="fmt-chip fmt-tone px-3 py-1.5 rounded-lg text-xs border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors" data-value="light and humorous">Light & Humorous</button>
+            <button class="fmt-chip fmt-tone px-3 py-1.5 rounded-lg text-xs border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors" data-value="lyrical and poetic">Lyrical & Poetic</button>
+            <button class="fmt-chip fmt-tone px-3 py-1.5 rounded-lg text-xs border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors" data-value="tense and fast-paced">Tense & Fast</button>
+            <button class="fmt-chip fmt-tone px-3 py-1.5 rounded-lg text-xs border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors" data-value="warm and emotional">Warm & Emotional</button>
+          </div>
+        </div>
+
+        <!-- Additional instructions -->
+        <div>
+          <p class="text-xs text-gray-500 mb-2 font-medium uppercase tracking-widest">Additional Instructions</p>
+          <textarea id="extra-instructions" rows="3"
+            class="w-full bg-[#0d0d0d] border border-gray-700 rounded-xl px-3 py-2.5 text-xs text-gray-300 placeholder-gray-600 focus:outline-none focus:border-indigo-600 transition-colors resize-none leading-relaxed"
+            placeholder="e.g. Set it in Japan, make the protagonist a chef, include a twist ending, write in the style of Haruki Murakami…"></textarea>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Generate button -->
     <button id="generate-btn"
       class="hidden w-full py-3 rounded-xl text-sm font-medium text-white bg-violet-600 hover:bg-violet-500 active:bg-violet-700 transition-colors">
       Generate New Book
@@ -232,13 +347,27 @@ The JSON must have exactly these fields:
 
 Be specific and precise. Base your analysis on the actual published book.`;
 
-  const GENERATE_PROMPT = `You are a master novelist. Your task is to create a COMPLETELY ORIGINAL new book inspired by the structural and stylistic DNA of a source book — not a copy, sequel, or retelling.
+  function buildGeneratePrompt(fmt) {
+    const numChapters = fmt.chapters;
+    const chapterLines = Array.from({ length: numChapters }, (_, i) =>
+      `### Chapter ${i + 1}: [Title]\n[2-3 sentence summary]`
+    ).join('\n\n');
+
+    const povLine   = fmt.pov   === 'source' ? 'Use the same narrative POV as the source book.' : `Use ${fmt.pov} narrative POV.`;
+    const genreLine = fmt.genre === 'source' ? 'Keep the same genre as the source book.' : `Shift the genre to: ${fmt.genre}.`;
+    const toneLine  = fmt.tone  === 'source' ? 'Preserve the same tone and atmosphere as the source book.' : `Use a ${fmt.tone} tone throughout.`;
+    const extraLine = fmt.extra ? `\nADDITIONAL INSTRUCTIONS FROM THE USER:\n${fmt.extra}\n` : '';
+
+    return `You are a master novelist. Your task is to create a COMPLETELY ORIGINAL new book inspired by the structural and stylistic DNA of a source book — not a copy, sequel, or retelling.
 
 The new book must:
-- Share the same narrative structure, POV style, pacing, and tone as the source
+- Share the same narrative structure as the source
 - Explore entirely different themes, characters, settings, and plot
 - Contain no characters, locations, or plot events from the source
-
+- ${povLine}
+- ${genreLine}
+- ${toneLine}
+${extraLine}
 Format your response using this exact markdown layout:
 
 # [NEW BOOK TITLE]
@@ -254,42 +383,15 @@ Format your response using this exact markdown layout:
 
 ## Chapter Outline
 
-### Chapter 1: [Title]
-[2-3 sentence summary]
-
-### Chapter 2: [Title]
-[2-3 sentence summary]
-
-### Chapter 3: [Title]
-[2-3 sentence summary]
-
-### Chapter 4: [Title]
-[2-3 sentence summary]
-
-### Chapter 5: [Title]
-[2-3 sentence summary]
-
-### Chapter 6: [Title]
-[2-3 sentence summary]
-
-### Chapter 7: [Title]
-[2-3 sentence summary]
-
-### Chapter 8: [Title]
-[2-3 sentence summary]
-
-### Chapter 9: [Title]
-[2-3 sentence summary]
-
-### Chapter 10: [Title]
-[2-3 sentence summary]
+${chapterLines}
 
 ## Sample Chapter: Chapter 1
 
-[Write a full sample chapter of 1000-1500 words. Employ the exact narrative POV, sentence rhythm, pacing, and tonal register of the source book's style. Do not reference or allude to the source book in any way.]
+[Write a full sample chapter of approximately ${fmt.chapLen} words. Employ the exact sentence rhythm, pacing, and tonal register specified. Do not reference or allude to the source book in any way.]
 
 ---
 *Style inspired by the narrative architecture of the source work — all content is original*`;
+  }
 
   // ── API key management ─────────────────────────────────────────────────────
   const KEY_STORE = 'book_replicator_api_key';
@@ -410,6 +512,9 @@ Format your response using this exact markdown layout:
   let analysisData  = null;
   let generatedText = '';
 
+  // Format settings (defaults)
+  const fmt = { chapters: 10, chapLen: 1000, pov: 'source', genre: 'source', tone: 'source', extra: '' };
+
   // ── DOM refs ───────────────────────────────────────────────────────────────
   const dropZone        = document.getElementById('drop-zone');
   const dropContent     = document.getElementById('drop-content');
@@ -429,6 +534,13 @@ Format your response using this exact markdown layout:
   const exportBtn       = document.getElementById('export-btn');
   const exportError     = document.getElementById('export-error');
   const resetBtn        = document.getElementById('reset-btn');
+  const contentToggle   = document.getElementById('content-toggle');
+  const contentPanel    = document.getElementById('content-panel');
+  const contentToggleIcon = document.getElementById('content-toggle-icon');
+  const contentInput    = document.getElementById('content-input');
+  const reanalyzeBtn    = document.getElementById('reanalyze-btn');
+  const formatPanel     = document.getElementById('format-panel');
+  const extraInstructions = document.getElementById('extra-instructions');
 
   // ── Step navigation ────────────────────────────────────────────────────────
   function goToStep(n) {
@@ -518,6 +630,35 @@ Format your response using this exact markdown layout:
     }
   });
 
+  // ── Content panel toggle ──────────────────────────────────────────────────
+  contentToggle.addEventListener('click', () => {
+    const open = !contentPanel.classList.contains('hidden');
+    contentPanel.classList.toggle('hidden', open);
+    contentToggleIcon.style.transform = open ? '' : 'rotate(180deg)';
+  });
+
+  // ── Re-analyze with pasted content ────────────────────────────────────────
+  reanalyzeBtn.addEventListener('click', async () => {
+    if (!bookData) return;
+    setLoading(reanalyzeBtn, 'Re-analyzing…');
+    hideError(analyzeError);
+    await runAnalysis(bookData);
+    resetLoading(reanalyzeBtn, 'Re-analyze with this Content');
+  });
+
+  // ── Format chip selection ─────────────────────────────────────────────────
+  document.querySelectorAll('.fmt-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const group = btn.className.match(/fmt-(\w+)/)[1];
+      document.querySelectorAll('.fmt-' + group).forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      const key = group === 'chaplen' ? 'chapLen' : group;
+      fmt[key] = group === 'chapters' || group === 'chaplen' ? Number(btn.dataset.value) : btn.dataset.value;
+    });
+  });
+
+  extraInstructions.addEventListener('input', () => { fmt.extra = extraInstructions.value.trim(); });
+
   // ── Step 2: Book card ──────────────────────────────────────────────────────
   function renderBookCard(b) {
     const badge = { high: 'bg-green-900/40 text-green-400', medium: 'bg-yellow-900/40 text-yellow-400', low: 'bg-red-900/40 text-red-400' }[b.confidence] || 'bg-gray-800 text-gray-400';
@@ -537,10 +678,15 @@ Format your response using this exact markdown layout:
   async function runAnalysis(b) {
     analysisLoading.classList.remove('hidden');
     analysisGrid.classList.add('hidden');
+    formatPanel.classList.add('hidden');
     generateBtn.classList.add('hidden');
     hideError(analyzeError);
     try {
-      const userMsg = 'Book: ' + b.title + ' by ' + b.author + '\nGenre: ' + b.genre + ' | Year: ' + b.year + '\nDescription: ' + b.description;
+      const pasted = contentInput.value.trim();
+      let userMsg = 'Book: ' + b.title + ' by ' + b.author + '\nGenre: ' + b.genre + ' | Year: ' + b.year + '\nDescription: ' + b.description;
+      if (pasted) {
+        userMsg += '\n\n--- BOOK CONTENT EXCERPT (use this for deeper style analysis) ---\n' + pasted.slice(0, 6000);
+      }
       const raw = await callApi('claude-opus-4-6', 2048, ANALYZE_PROMPT, [{ role: 'user', content: userMsg }]);
       analysisData = JSON.parse(stripJsonFences(raw));
       renderAnalysis(analysisData);
@@ -571,6 +717,7 @@ Format your response using this exact markdown layout:
       '</div>'
     ).join('');
     analysisGrid.classList.remove('hidden');
+    formatPanel.classList.remove('hidden');
     generateBtn.classList.remove('hidden');
   }
 
@@ -602,7 +749,7 @@ Format your response using this exact markdown layout:
       'Original description: ' + bookData.description;
 
     try {
-      const gen = streamApi('claude-opus-4-6', 8192, GENERATE_PROMPT, [{ role: 'user', content: userMsg }]);
+      const gen = streamApi('claude-opus-4-6', 8192, buildGeneratePrompt(fmt), [{ role: 'user', content: userMsg }]);
       let first = true;
       for await (const chunk of gen) {
         if (first) { genOutput.innerHTML = ''; first = false; }
@@ -765,8 +912,20 @@ Format your response using this exact markdown layout:
     currentFile = null; currentB64 = null; currentMime = null;
     bookData = null; analysisData = null; generatedText = '';
     fileInput.value = ''; textInput.value = '';
+    contentInput.value = ''; extraInstructions.value = '';
+    contentPanel.classList.add('hidden');
+    contentToggleIcon.style.transform = '';
+    fmt.chapters = 10; fmt.chapLen = 1000; fmt.pov = 'source'; fmt.genre = 'source'; fmt.tone = 'source'; fmt.extra = '';
+    // Reset chip selections to defaults
+    document.querySelectorAll('.fmt-chip').forEach(b => b.classList.remove('selected'));
+    document.querySelector('.fmt-chapters[data-value="10"]').classList.add('selected');
+    document.querySelector('.fmt-chaplen[data-value="1000"]').classList.add('selected');
+    document.querySelector('.fmt-pov[data-value="source"]').classList.add('selected');
+    document.querySelector('.fmt-genre[data-value="source"]').classList.add('selected');
+    document.querySelector('.fmt-tone[data-value="source"]').classList.add('selected');
     dropContent.classList.remove('hidden');
     dropPreview.classList.add('hidden'); dropPreview.innerHTML = '';
+    formatPanel.classList.add('hidden');
     exportRow.classList.add('hidden');
     genOutput.innerHTML = ''; genOutput.classList.remove('cursor');
     hideError(identifyError); hideError(analyzeError); hideError(exportError);
