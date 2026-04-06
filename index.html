@@ -193,7 +193,7 @@
 
         <!-- Sample chapter length -->
         <div>
-          <p class="text-xs text-gray-500 mb-2 font-medium uppercase tracking-widest">Sample Chapter Length</p>
+          <p class="text-xs text-gray-500 mb-2 font-medium uppercase tracking-widest">Words Per Chapter</p>
           <div class="flex gap-2 flex-wrap">
             <button class="fmt-chip fmt-chaplen px-3 py-1.5 rounded-lg text-xs border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors" data-value="500">Short (~500w)</button>
             <button class="fmt-chip fmt-chaplen px-3 py-1.5 rounded-lg text-xs border border-gray-700 text-gray-400 hover:border-indigo-500 hover:text-indigo-400 transition-colors selected" data-value="1000">Medium (~1000w)</button>
@@ -263,14 +263,34 @@
 
   <!-- ══ STEP 3 ══════════════════════════════════════════════════════════════ -->
   <section id="step-generate" class="step">
+
+    <!-- Header row -->
     <div class="flex items-center justify-between mb-4">
-      <h2 class="text-base font-semibold">Generated Book</h2>
+      <div class="flex items-center gap-3">
+        <button id="back-to-analyze-btn"
+          class="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors">
+          ← Back to Analyze
+        </button>
+        <h2 class="text-base font-semibold">Generated Book</h2>
+      </div>
       <span class="text-xs px-2 py-1 bg-gray-800 text-gray-500 rounded-full">claude-opus-4-6</span>
     </div>
 
+    <!-- Chapter progress bar (visible during generation) -->
+    <div id="chap-progress" class="hidden mb-4 p-3 bg-[#111] border border-gray-800 rounded-xl">
+      <div class="flex items-center justify-between mb-2">
+        <span id="chap-progress-label" class="text-xs text-gray-400">Building structure…</span>
+        <span id="chap-progress-frac" class="text-xs text-gray-600"></span>
+      </div>
+      <div class="w-full bg-gray-800 rounded-full h-1">
+        <div id="chap-progress-bar" class="bg-indigo-500 h-1 rounded-full transition-all duration-500" style="width:0%"></div>
+      </div>
+    </div>
+
+    <!-- Rendered book output -->
     <div id="gen-output"
       class="md text-sm leading-relaxed bg-[#0d0d0d] border border-gray-800 rounded-2xl p-6 min-h-40 mb-5">
-      <span class="text-gray-600">Generating your original book…</span>
+      <span class="text-gray-600">Your generated book will appear here…</span>
     </div>
 
     <!-- Export row -->
@@ -347,50 +367,72 @@ The JSON must have exactly these fields:
 
 Be specific and precise. Base your analysis on the actual published book.`;
 
-  function buildGeneratePrompt(fmt) {
-    const numChapters = fmt.chapters;
-    const chapterLines = Array.from({ length: numChapters }, (_, i) =>
-      `### Chapter ${i + 1}: [Title]\n[2-3 sentence summary]`
-    ).join('\n\n');
+  // ── Phase 1: Book structure prompt (returns JSON) ─────────────────────────
+  function buildStructurePrompt(fmt) {
+    const povLine   = fmt.pov   === 'source' ? 'same POV as source book' : fmt.pov;
+    const genreLine = fmt.genre === 'source' ? 'same genre as source book' : fmt.genre;
+    const toneLine  = fmt.tone  === 'source' ? 'same tone as source book' : fmt.tone;
+    const extraLine = fmt.extra ? `\nExtra instructions: ${fmt.extra}` : '';
+    return `You are a master story architect. Design a COMPLETELY ORIGINAL book inspired by the narrative DNA of a source book — not a copy or retelling.
 
-    const povLine   = fmt.pov   === 'source' ? 'Use the same narrative POV as the source book.' : `Use ${fmt.pov} narrative POV.`;
-    const genreLine = fmt.genre === 'source' ? 'Keep the same genre as the source book.' : `Shift the genre to: ${fmt.genre}.`;
-    const toneLine  = fmt.tone  === 'source' ? 'Preserve the same tone and atmosphere as the source book.' : `Use a ${fmt.tone} tone throughout.`;
-    const extraLine = fmt.extra ? `\nADDITIONAL INSTRUCTIONS FROM THE USER:\n${fmt.extra}\n` : '';
+Settings: ${fmt.chapters} chapters | POV: ${povLine} | Genre: ${genreLine} | Tone: ${toneLine}${extraLine}
 
-    return `You are a master novelist. Your task is to create a COMPLETELY ORIGINAL new book inspired by the structural and stylistic DNA of a source book — not a copy, sequel, or retelling.
+The new book must have entirely different characters, plot, setting, and themes from the source. No names, places, or events from the source.
 
-The new book must:
-- Share the same narrative structure as the source
-- Explore entirely different themes, characters, settings, and plot
-- Contain no characters, locations, or plot events from the source
+Respond with ONLY a valid JSON object — no markdown fences, no prose:
+{
+  "title": "The book title",
+  "premise": "2-3 sentence core conflict",
+  "genre": "genre of this book",
+  "setting": "2-3 sentences: time period, place, world atmosphere",
+  "characters": [
+    {"name": "...", "role": "protagonist/antagonist/etc", "description": "1-sentence description"}
+  ],
+  "chapters": [
+    {
+      "number": 1,
+      "title": "Chapter title",
+      "summary": "2-3 sentence summary of what happens",
+      "key_events": ["event 1", "event 2"],
+      "emotional_arc": "tension/mood shift — e.g. hope → dread"
+    }
+  ]
+}
+Include exactly ${fmt.chapters} chapters.`;
+  }
+
+  // ── Phase 2: Single chapter prompt (streaming) ────────────────────────────
+  function buildChapterPrompt(structure, chap, prevSummary, fmt) {
+    const povLine  = fmt.pov  === 'source' ? 'Use the same POV style as the source book analysis.' : `Write in ${fmt.pov}.`;
+    const toneLine = fmt.tone === 'source' ? 'Match the tone/style of the source book analysis.' : `Write with a ${fmt.tone} tone.`;
+    const charList = structure.characters.map(c => `- ${c.name} (${c.role}): ${c.description}`).join('\n');
+    const allChapSummaries = structure.chapters.map(c =>
+      `Ch.${c.number} "${c.title}": ${c.summary}`).join('\n');
+    return `You are a master novelist writing Chapter ${chap.number} of ${structure.chapters.length} of an original book.
+
+BOOK: "${structure.title}"
+PREMISE: ${structure.premise}
+GENRE: ${structure.genre}
+SETTING: ${structure.setting}
+
+CHARACTERS:
+${charList}
+
+FULL CHAPTER PLAN:
+${allChapSummaries}
+
+THIS CHAPTER — Chapter ${chap.number}: "${chap.title}"
+Summary: ${chap.summary}
+Key events: ${chap.key_events.join('; ')}
+Emotional arc: ${chap.emotional_arc}
+${prevSummary ? '\nPREVIOUS CHAPTER RECAP:\n' + prevSummary : ''}
+
+WRITING INSTRUCTIONS:
 - ${povLine}
-- ${genreLine}
 - ${toneLine}
-${extraLine}
-Format your response using this exact markdown layout:
-
-# [NEW BOOK TITLE]
-
-## Premise
-[2-3 sentences: the core central conflict or premise]
-
-## Characters
-[List 4-6 characters with name, role, and 1-sentence description each]
-
-## Setting
-[Time period and world — 2-3 sentences]
-
-## Chapter Outline
-
-${chapterLines}
-
-## Sample Chapter: Chapter 1
-
-[Write a full sample chapter of approximately ${fmt.chapLen} words. Employ the exact sentence rhythm, pacing, and tonal register specified. Do not reference or allude to the source book in any way.]
-
----
-*Style inspired by the narrative architecture of the source work — all content is original*`;
+- Target length: approximately ${fmt.chapLen} words
+- Write the full chapter as published prose — no author notes, no summaries, no meta-commentary
+- Begin writing the chapter directly with no preamble`;
   }
 
   // ── API key management ─────────────────────────────────────────────────────
@@ -534,13 +576,18 @@ ${chapterLines}
   const exportBtn       = document.getElementById('export-btn');
   const exportError     = document.getElementById('export-error');
   const resetBtn        = document.getElementById('reset-btn');
-  const contentToggle   = document.getElementById('content-toggle');
-  const contentPanel    = document.getElementById('content-panel');
+  const contentToggle     = document.getElementById('content-toggle');
+  const contentPanel      = document.getElementById('content-panel');
   const contentToggleIcon = document.getElementById('content-toggle-icon');
-  const contentInput    = document.getElementById('content-input');
-  const reanalyzeBtn    = document.getElementById('reanalyze-btn');
-  const formatPanel     = document.getElementById('format-panel');
+  const contentInput      = document.getElementById('content-input');
+  const reanalyzeBtn      = document.getElementById('reanalyze-btn');
+  const formatPanel       = document.getElementById('format-panel');
   const extraInstructions = document.getElementById('extra-instructions');
+  const backToAnalyzeBtn  = document.getElementById('back-to-analyze-btn');
+  const chapProgress      = document.getElementById('chap-progress');
+  const chapProgressLabel = document.getElementById('chap-progress-label');
+  const chapProgressFrac  = document.getElementById('chap-progress-frac');
+  const chapProgressBar   = document.getElementById('chap-progress-bar');
 
   // ── Step navigation ────────────────────────────────────────────────────────
   function goToStep(n) {
@@ -659,6 +706,17 @@ ${chapterLines}
 
   extraInstructions.addEventListener('input', () => { fmt.extra = extraInstructions.value.trim(); });
 
+  // ── Back to Analyze ────────────────────────────────────────────────────────
+  backToAnalyzeBtn.addEventListener('click', () => {
+    goToStep(2);
+    // Stop any active generation by resetting state
+    generatedText = '';
+    genOutput.innerHTML = '<span class="text-gray-600">Your generated book will appear here…</span>';
+    genOutput.classList.remove('cursor');
+    chapProgress.classList.add('hidden');
+    exportRow.classList.add('hidden');
+  });
+
   // ── Step 2: Book card ──────────────────────────────────────────────────────
   function renderBookCard(b) {
     const badge = { high: 'bg-green-900/40 text-green-400', medium: 'bg-yellow-900/40 text-yellow-400', low: 'bg-red-900/40 text-red-400' }[b.confidence] || 'bg-gray-800 text-gray-400';
@@ -727,49 +785,116 @@ ${chapterLines}
     ).join('');
   }
 
-  // ── Step 3: Generate ───────────────────────────────────────────────────────
+  // ── Step 3: Generate (two-phase: structure → chapters) ────────────────────
   generateBtn.addEventListener('click', async () => {
     goToStep(3);
     generatedText = '';
-    genOutput.innerHTML = '<span class="text-gray-600">Generating your original book…</span>';
-    genOutput.classList.add('cursor');
+    genOutput.innerHTML = '';
+    genOutput.classList.remove('cursor');
+    chapProgress.classList.remove('hidden');
     exportRow.classList.add('hidden');
     hideError(exportError);
 
-    const userMsg =
+    const sourceContext =
       'SOURCE BOOK: ' + bookData.title + ' by ' + bookData.author + '\n' +
-      'Genre: ' + bookData.genre + '\n\n' +
-      'ANALYSIS:\n' +
+      'Genre: ' + bookData.genre + '\n' +
       'Themes: ' + (analysisData.themes || []).join(', ') + '\n' +
       'Plot structure: ' + (analysisData.plot_structure || '') + '\n' +
       'Character archetypes: ' + (analysisData.character_archetypes || []).join(', ') + '\n' +
       'Narrative POV: ' + (analysisData.narrative_pov || '') + '\n' +
       'Tone/Style: ' + (analysisData.tone_style || []).join(', ') + '\n' +
       'Key motifs: ' + (analysisData.key_motifs || []).join(', ') + '\n' +
-      'Original description: ' + bookData.description;
+      'Description: ' + bookData.description;
 
     try {
-      const gen = streamApi('claude-opus-4-6', 8192, buildGeneratePrompt(fmt), [{ role: 'user', content: userMsg }]);
-      let first = true;
-      for await (const chunk of gen) {
-        if (first) { genOutput.innerHTML = ''; first = false; }
-        generatedText += chunk;
+      // ── Phase 1: Build book structure ──────────────────────────────────────
+      setProgress('Planning book structure…', 0, fmt.chapters);
+      const structRaw = await callApi(
+        'claude-opus-4-6', 4096,
+        buildStructurePrompt(fmt),
+        [{ role: 'user', content: sourceContext }]
+      );
+      const structure = JSON.parse(stripJsonFences(structRaw));
+
+      // Render book header (title, premise, characters, setting)
+      const headerMd =
+        '# ' + structure.title + '\n\n' +
+        '**Genre:** ' + structure.genre + '\n\n' +
+        '## Premise\n' + structure.premise + '\n\n' +
+        '## Setting\n' + structure.setting + '\n\n' +
+        '## Characters\n' +
+        structure.characters.map(c => '- **' + c.name + '** (' + c.role + ') — ' + c.description).join('\n') +
+        '\n\n---\n\n';
+
+      generatedText = headerMd;
+      genOutput.innerHTML = marked.parse(generatedText);
+
+      // ── Phase 2: Write each chapter ────────────────────────────────────────
+      let prevSummary = '';
+      for (let i = 0; i < structure.chapters.length; i++) {
+        const chap = structure.chapters[i];
+        setProgress('Writing Chapter ' + chap.number + ': ' + chap.title + '…', i, structure.chapters.length);
+
+        // Chapter heading
+        const chapHeading = '## Chapter ' + chap.number + ': ' + chap.title + '\n\n';
+        generatedText += chapHeading;
         genOutput.innerHTML = marked.parse(generatedText);
         genOutput.scrollIntoView({ block: 'end', behavior: 'smooth' });
+
+        // Stream chapter prose
+        const chapPrompt  = buildChapterPrompt(structure, chap, prevSummary, fmt);
+        const gen = streamApi('claude-opus-4-6', 4096, chapPrompt,
+          [{ role: 'user', content: 'Write the full chapter now.' }]);
+
+        let chapText = '';
+        for await (const chunk of gen) {
+          chapText      += chunk;
+          generatedText  = generatedText.slice(0, generatedText.length) ; // already has heading
+          const partial  = headerMd +
+            structure.chapters.slice(0, i).map((c, idx) => {
+              // previously completed chapters are already in generatedText — just re-parse whole thing
+            }) + '';
+          // Append incrementally to output (replace last chapter's partial content)
+          const displayText = generatedText + chapText;
+          genOutput.innerHTML = marked.parse(displayText);
+          genOutput.scrollIntoView({ block: 'end', behavior: 'smooth' });
+        }
+
+        generatedText += chapText + '\n\n';
+        prevSummary = chap.summary;
+
+        // Add chapter separator except after last
+        if (i < structure.chapters.length - 1) {
+          generatedText += '---\n\n';
+        }
+        genOutput.innerHTML = marked.parse(generatedText);
       }
-      genOutput.classList.remove('cursor');
+
+      // Done
+      const footer = '\n---\n*Original work — style inspired by the narrative DNA of ' + esc(bookData.title) + '*\n';
+      generatedText += footer;
+      genOutput.innerHTML = marked.parse(generatedText);
+      setProgress('Complete!', structure.chapters.length, structure.chapters.length);
+      setTimeout(() => chapProgress.classList.add('hidden'), 2000);
       exportRow.classList.remove('hidden');
     } catch (e) {
       genOutput.classList.remove('cursor');
-      genOutput.innerHTML = '<span class="text-red-400">Error: ' + esc(e.message) + '</span>';
+      chapProgress.classList.add('hidden');
+      genOutput.innerHTML = (genOutput.innerHTML || '') + '<p class="text-red-400 mt-4 text-xs">Error: ' + esc(e.message) + '</p>';
     }
   });
+
+  function setProgress(label, done, total) {
+    chapProgressLabel.textContent = label;
+    chapProgressFrac.textContent  = total > 0 ? done + ' / ' + total + ' chapters' : '';
+    chapProgressBar.style.width   = total > 0 ? Math.round((done / total) * 100) + '%' : '5%';
+  }
 
   // ── Export ─────────────────────────────────────────────────────────────────
   exportBtn.addEventListener('click', async () => {
     if (!generatedText) return;
     hideError(exportError);
-    const fmt = exportFormat.value;
+    const exportFmt = exportFormat.value;
 
     // Extract title from first # heading
     const titleMatch = generatedText.match(/^#\s+(.+)/m);
@@ -778,11 +903,11 @@ ${chapterLines}
 
     setLoading(exportBtn, 'Preparing…');
     try {
-      if (fmt === 'docx') {
+      if (exportFmt === 'docx') {
         await exportDocx(bookTitle, safeName);
-      } else if (fmt === 'pdf') {
+      } else if (exportFmt === 'pdf') {
         exportPdf(bookTitle);
-      } else if (fmt === 'epub') {
+      } else if (exportFmt === 'epub') {
         await exportEpub(bookTitle, safeName);
       }
     } catch (e) {
@@ -927,7 +1052,9 @@ ${chapterLines}
     dropPreview.classList.add('hidden'); dropPreview.innerHTML = '';
     formatPanel.classList.add('hidden');
     exportRow.classList.add('hidden');
-    genOutput.innerHTML = ''; genOutput.classList.remove('cursor');
+    genOutput.innerHTML = '<span class="text-gray-600">Your generated book will appear here…</span>';
+    genOutput.classList.remove('cursor');
+    chapProgress.classList.add('hidden');
     hideError(identifyError); hideError(analyzeError); hideError(exportError);
     goToStep(1);
   });
